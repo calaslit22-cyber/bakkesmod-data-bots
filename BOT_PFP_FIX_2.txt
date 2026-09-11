@@ -1,0 +1,15 @@
+RLProfilePictures Bot PFP Fix #2
+
+The previous build successfully compiled the bot-PFP code, but the original renderer still had an online-game-only guard. Bot matches are offline/private, so the renderer returned before drawing any bot images.
+
+This version changes RenderPlatformLogos so it renders in offline/private matches and only performs ServerWrapper match checks when actually in an online game.
+
+Keep bot images in:
+%APPDATA%\bakkesmod\bakkesmod\data\bots
+
+Expected mappings:
+Jay -> Jay.png
+zen -> zen.png
+. -> dot.png
+Lila Bot -> Lila Bot.png
+etc.
