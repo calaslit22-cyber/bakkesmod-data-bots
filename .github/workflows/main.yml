@@ -98,7 +98,6 @@ jobs:
       - name: Build
         shell: powershell
         run: |
-
           $pluginInclude = "$PWD\RLProfilePictures-main\RLProfilePictures"
           $vcpkgInclude = "$PWD\RLProfilePictures-main\vcpkg_installed\x64-windows\include"
           $sdkInclude = "C:\bakkesmodsdk\bakkesmodsdk\include"
@@ -122,35 +121,50 @@ jobs:
       - name: Find DLL
         shell: powershell
         run: |
+          Write-Host "Searching entire workspace for RLProfilePictures.dll..."
 
           $dll = Get-ChildItem `
-            -Path "RLProfilePictures-main" `
+            -Path "$env:GITHUB_WORKSPACE" `
             -Filter "RLProfilePictures.dll" `
             -Recurse `
-            -File |
-            Where-Object {
-              $_.FullName -match "\\Release\\"
-            } |
+            -File `
+            -ErrorAction SilentlyContinue |
             Select-Object -First 1
 
           if (!$dll) {
+            Write-Host ""
+            Write-Host "No DLL found. Listing build output files:"
+
+            Get-ChildItem `
+              -Path "$env:GITHUB_WORKSPACE" `
+              -Recurse `
+              -File `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Extension -in ".dll", ".lib", ".exe"
+              } |
+              ForEach-Object {
+                Write-Host $_.FullName
+              }
+
             throw "RLProfilePictures.dll was NOT built."
           }
 
+          Write-Host ""
           Write-Host "========================================"
-          Write-Host "DLL BUILT SUCCESSFULLY"
+          Write-Host "DLL FOUND!"
           Write-Host $dll.FullName
           Write-Host "========================================"
 
           New-Item `
             -ItemType Directory `
             -Force `
-            -Path "build_output" |
+            -Path "$env:GITHUB_WORKSPACE\build_output" |
             Out-Null
 
           Copy-Item `
             $dll.FullName `
-            "build_output\RLProfilePictures.dll" `
+            "$env:GITHUB_WORKSPACE\build_output\RLProfilePictures.dll" `
             -Force
 
       - name: Upload DLL
