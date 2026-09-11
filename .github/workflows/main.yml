@@ -1,1 +1,160 @@
+name: Build RLProfilePictures
 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download BakkesMod SDK
+        shell: powershell
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/bakkesmodorg/BakkesModSDK/archive/refs/heads/master.zip" `
+            -OutFile "$env:TEMP\bakkesmodsdk.zip"
+
+          Expand-Archive `
+            -Path "$env:TEMP\bakkesmodsdk.zip" `
+            -DestinationPath "$env:TEMP\bakkesmodsdk" `
+            -Force
+
+          $sdk = Get-ChildItem "$env:TEMP\bakkesmodsdk" -Directory |
+            Select-Object -First 1
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "C:\bakkesmodsdk\bakkesmodsdk" |
+            Out-Null
+
+          Copy-Item `
+            "$($sdk.FullName)\include" `
+            "C:\bakkesmodsdk\bakkesmodsdk\include" `
+            -Recurse `
+            -Force
+
+          Copy-Item `
+            "$($sdk.FullName)\lib" `
+            "C:\bakkesmodsdk\bakkesmodsdk\lib" `
+            -Recurse `
+            -Force
+
+          if (!(Test-Path "C:\bakkesmodsdk\bakkesmodsdk\include\bakkesmod\plugin\bakkesmodplugin.h")) {
+            throw "BakkesMod SDK headers are missing."
+          }
+
+          if (!(Test-Path "C:\bakkesmodsdk\bakkesmodsdk\lib\pluginsdk.lib")) {
+            throw "pluginsdk.lib is missing."
+          }
+
+          Write-Host "BakkesMod SDK OK."
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup vcpkg
+        shell: powershell
+        run: |
+          if (!(Test-Path "C:\vcpkg\vcpkg.exe")) {
+
+            if (Test-Path "C:\vcpkg") {
+              Remove-Item "C:\vcpkg" -Recurse -Force
+            }
+
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git C:\vcpkg
+
+            C:\vcpkg\bootstrap-vcpkg.bat
+          }
+
+          Write-Host "vcpkg OK."
+
+      - name: Install dependencies
+        shell: powershell
+        working-directory: RLProfilePictures-main
+        run: |
+          C:\vcpkg\vcpkg.exe install --triplet x64-windows
+
+      - name: Verify nlohmann JSON
+        shell: powershell
+        run: |
+          $json = "RLProfilePictures-main\vcpkg_installed\x64-windows\include\nlohmann\json.hpp"
+
+          if (!(Test-Path $json)) {
+            throw "nlohmann/json.hpp was not installed."
+          }
+
+          Write-Host "Found:"
+          Write-Host $json
+
+      - name: Build
+        shell: powershell
+        run: |
+
+          $pluginInclude = "$PWD\RLProfilePictures-main\RLProfilePictures"
+          $vcpkgInclude = "$PWD\RLProfilePictures-main\vcpkg_installed\x64-windows\include"
+          $sdkInclude = "C:\bakkesmodsdk\bakkesmodsdk\include"
+
+          $env:INCLUDE = `
+            "$pluginInclude;$vcpkgInclude;$sdkInclude;$env:INCLUDE"
+
+          Write-Host "========================================"
+          Write-Host "INCLUDE PATHS"
+          Write-Host $env:INCLUDE
+          Write-Host "========================================"
+
+          msbuild `
+            "RLProfilePictures-main\RLProfilePictures.sln" `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:BakkesModPath="C:\bakkesmodsdk" `
+            /p:PostBuildEventUseInBuild=false `
+            /m
+
+      - name: Find DLL
+        shell: powershell
+        run: |
+
+          $dll = Get-ChildItem `
+            -Path "RLProfilePictures-main" `
+            -Filter "RLProfilePictures.dll" `
+            -Recurse `
+            -File |
+            Where-Object {
+              $_.FullName -match "\\Release\\"
+            } |
+            Select-Object -First 1
+
+          if (!$dll) {
+            throw "RLProfilePictures.dll was NOT built."
+          }
+
+          Write-Host "========================================"
+          Write-Host "DLL BUILT SUCCESSFULLY"
+          Write-Host $dll.FullName
+          Write-Host "========================================"
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "build_output" |
+            Out-Null
+
+          Copy-Item `
+            $dll.FullName `
+            "build_output\RLProfilePictures.dll" `
+            -Force
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: RLProfilePictures-BotPFP
+          path: build_output\RLProfilePictures.dll
